@@ -1,0 +1,41 @@
+name: sync
+
+# Proposes this revision of app/ to every package repository, with the
+# shared workflows pinned to it. The control workflow merges each pull
+# request once its checks pass.
+on:
+  push:
+    branches: [main]
+    paths: [app/**, packages.toml]
+  workflow_dispatch:
+
+concurrency:
+  group: sync
+
+permissions: {}
+
+jobs:
+  sync:
+    # Skipped until the GitHub App in README.md is set up.
+    if: vars.APP_ID != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+      - name: Propose
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          id=$(gh api "users/${SLUG}[bot]" --jq .id)
+          export BOT_NAME="${SLUG}[bot]" BOT_EMAIL="$id+${SLUG}[bot]@users.noreply.github.com"
+          python3 scripts/control.py sync "$GITHUB_SHA"

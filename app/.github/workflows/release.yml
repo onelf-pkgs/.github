@@ -1,0 +1,25 @@
+name: release
+
+# Copied from onelf-pkgs/.github by its sync workflow, which also pins the
+# shared workflow below to the revision it synced from. Edit it there.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md"]
+  pull_request:
+    paths-ignore: ["**.md"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+jobs:
+  release:
+    uses: onelf-pkgs/.github/.github/workflows/pkg-release.yml@__SHARED_REF__
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write

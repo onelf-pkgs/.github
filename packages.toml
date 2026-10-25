@@ -1,0 +1,4 @@
+# Package repositories in the onelf-pkgs organization that the control
+# workflows manage. Each follows the contract in
+# .github/workflows/pkg-release.yml.
+repos = ["mesa"]

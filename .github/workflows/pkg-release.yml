@@ -1,0 +1,130 @@
+name: pkg-release
+
+# Builds a package repository for every architecture it lists, and
+# releases the result when its version has no release yet. Called from
+# the package's release.yml.
+#
+# A package repository holds:
+#
+#   package.toml  `name`, `release`, `arches` and [sources.<name>], whose
+#                 version is the package's; see scripts/upstream.py
+#   build.sh      run as root in a Void Linux (glibc) container; writes dist/
+#   test.sh       optional; run after build.sh in the same container
+#
+# The release is tagged v<version>-<release>. A pull request, or a push
+# whose tag already exists, builds and tests without releasing.
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  prepare:
+    name: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      publish: ${{ steps.plan.outputs.publish }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: plan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json, tomllib
+          package = tomllib.load(open("package.toml", "rb"))
+          version = package["sources"][package["name"]]["version"]
+          print(f"tag=v{version}-{package['release']}")
+          runners = {"x86_64": "ubuntu-latest", "aarch64": "ubuntu-24.04-arm"}
+          include = [{"arch": arch, "os": runners[arch]} for arch in package["arches"]]
+          print("matrix=" + json.dumps({"include": include}))
+          EOF
+          tag=$(sed -n 's/^tag=//p' "$GITHUB_OUTPUT")
+          publish=false
+          if [ "$EVENT" != pull_request ] &&
+              ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+              publish=true
+          fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "$tag, publish: $publish"
+
+  build:
+    name: build ${{ matrix.arch }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    # Void's official image covers every architecture with one index.
+    container:
+      image: ghcr.io/void-linux/void-glibc:latest@sha256:91a7c5e2ccaa48ed2c664633110c0f19aff08a2d55ae0709083d1eb562b98ccb
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - name: Install what the actions need
+        run: |
+          xbps-install -Syu xbps
+          xbps-install -Syu bash git tar xz zstd libstdc++ libgcc
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Whatever build.sh keeps in build/cache, such as a toolchain that
+      # takes longer to build than the package, survives between runs.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/cache
+          key: build-cache-${{ matrix.arch }}-${{ hashFiles('package.toml') }}
+          restore-keys: build-cache-${{ matrix.arch }}-
+      - run: sh build.sh
+      - name: Test
+        run: if [ -f test.sh ]; then sh test.sh; fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: publish
+    needs: [prepare, build]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "Built from $GITHUB_SHA."
+            if ls dist/*.blake3 > /dev/null 2>&1; then
+              echo
+              echo '| File | BLAKE3 |'
+              echo '|------|--------|'
+              for hash in dist/*.blake3; do
+                echo "| \`$(basename "${hash%.blake3}")\` | \`$(cat "$hash")\` |"
+              done
+            fi
+          } > notes.md
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --title "$TAG" --notes-file notes.md

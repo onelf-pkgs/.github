@@ -1,0 +1,72 @@
+name: control
+
+# Once a day, and on demand: merge the bot's pull requests whose checks
+# passed, propose the upstream releases the packages fell behind, and
+# refresh the status issue.
+on:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: control
+
+permissions: {}
+
+jobs:
+  control:
+    # Skipped until the GitHub App in README.md is set up.
+    if: vars.APP_ID != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+      - name: Identify the bot
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          id=$(gh api "users/${SLUG}[bot]" --jq .id)
+          {
+            echo "BOT_LOGIN=$SLUG"
+            echo "BOT_NAME=${SLUG}[bot]"
+            echo "BOT_EMAIL=$id+${SLUG}[bot]@users.noreply.github.com"
+          } >> "$GITHUB_ENV"
+      - name: Merge what passed
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: python3 scripts/control.py merge
+      - name: Follow upstream
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: python3 scripts/control.py upstream
+      - name: Report
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          ISSUES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "Updated by the [control workflow]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/workflows/control.yml) at $(date -u '+%Y-%m-%d %H:%M UTC')."
+            echo
+            python3 scripts/control.py status
+          } > status.md
+          cat status.md >> "$GITHUB_STEP_SUMMARY"
+          export GH_TOKEN=$ISSUES_TOKEN
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search 'in:title "Package status"' --json number --jq '.[0].number')
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --repo "$GITHUB_REPOSITORY" --body-file status.md
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "Package status" \
+              --body-file status.md
+          fi
