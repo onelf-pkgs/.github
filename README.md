@@ -33,8 +33,8 @@ version, what upstream has, its latest release and its last build. The
 control workflow rewrites it on every run.
 
 A change to the shared workflows reaches the packages the same way: a
-push to `app/` here makes the `sync` workflow open a `chore/sync` pull
-request in every package repository, with `@__SHARED_REF__` replaced by
+push to `app/` or `pkg-release.yml` here makes the `sync` workflow open
+a `chore/sync` pull request in every package repository, with `@__SHARED_REF__` replaced by
 the commit synced from, and the control workflow merges each once it
 passes.
 

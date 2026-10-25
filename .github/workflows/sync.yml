@@ -1,12 +1,13 @@
 name: sync
 
 # Proposes this revision of app/ to every package repository, with the
-# shared workflows pinned to it. The control workflow merges each pull
-# request once its checks pass.
+# shared workflows pinned to it, so a change to the reusable workflow
+# reaches them too. The control workflow merges each pull request once
+# its checks pass.
 on:
   push:
     branches: [main]
-    paths: [app/**, packages.toml]
+    paths: [app/**, packages.toml, .github/workflows/pkg-release.yml]
   workflow_dispatch:
 
 concurrency:
