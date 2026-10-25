@@ -51,8 +51,19 @@ The source named like the package gives the version. `build/cache` is
 kept between runs for anything slower to build than the package itself.
 Raise `release` by hand when the recipe changes and the sources do not.
 
-To add one, create the repository in the organization, add its name to
-`packages.toml`, and push: the sync opens its first pull request.
+To add one, create the repository in the organization, set it to merge
+pull requests by squash only, titled by the pull request, as every
+repository here does:
+
+```sh
+gh api -X PATCH repos/onelf-pkgs/<name> \
+  -F allow_squash_merge=true -F allow_merge_commit=false -F allow_rebase_merge=false \
+  -f squash_merge_commit_title=PR_TITLE -f squash_merge_commit_message=BLANK \
+  -F delete_branch_on_merge=true
+```
+
+then add its name to `packages.toml` and push: the sync opens its first
+pull request.
 
 ## Setup
 
