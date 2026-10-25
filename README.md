@@ -69,8 +69,9 @@ owned by the organization. Create it once:
    - Commit statuses: read
    - Actions: read
 2. Install it on all repositories of the organization.
-3. In this repository, add the variable `APP_ID` with the app's ID and
-   the secret `APP_PRIVATE_KEY` with a private key generated for it.
+3. In this repository, add the variable `APP_CLIENT_ID` with the app's
+   client ID (`Iv23...`, on its settings page) and the secret
+   `APP_PRIVATE_KEY` with a private key generated for it.
 
 Nothing else holds a credential. Each package repository releases with
 its own `GITHUB_TOKEN`.

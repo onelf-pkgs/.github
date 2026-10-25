@@ -16,7 +16,7 @@ permissions: {}
 jobs:
   control:
     # Skipped until the GitHub App in README.md is set up.
-    if: vars.APP_ID != ''
+    if: vars.APP_CLIENT_ID != ''
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -28,7 +28,7 @@ jobs:
       - id: app
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ vars.APP_ID }}
+          client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
       - name: Identify the bot
