@@ -8,13 +8,18 @@ Usage:
                             every repository whose copy of app/ differs
     control.py merge        merge the pull requests this bot opened once
                             every check on them passed
+    control.py keys         give every self-updating package its update
+                            key and open a `chore/update-key` pull request
+                            committing the public half
     control.py status       print a Markdown table of every repository
 
 GH_TOKEN is the GitHub App's installation token. BOT_NAME and BOT_EMAIL
 are the identity its commits carry, and BOT_LOGIN the login its pull
-requests are opened under.
+requests are opened under. ONELF names the onelf binary `keys` generates
+keys with.
 """
 
+import base64
 import json
 import os
 import shutil
@@ -43,6 +48,11 @@ def run(*args, cwd=None):
 
 def gh_json(*args):
     return json.loads(run("gh", *args))
+
+
+def exists(path):
+    return subprocess.run(["gh", "api", path], stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL).returncode == 0
 
 
 def clone(repo, dest):
@@ -140,6 +150,70 @@ def merge():
             print(f"{repo}#{pull['number']}: merged {pull['title']}")
 
 
+def keys():
+    """Store a new keypair's secret as ONELF_SIGNING_KEY in the `release`
+    environment of every package with `self-update = true` that has no key
+    yet, and propose its public half as update.pub. A key on main is never
+    replaced, since every bundle released since embeds it. The environment,
+    usable by main alone, is created by hand when the repository is."""
+    failed = []
+    for repo in repos():
+        full = f"{ORG}/{repo}"
+        package = tomllib.loads(run("gh", "api", f"repos/{full}/contents/package.toml",
+                                    "-H", "Accept: application/vnd.github.raw"))
+        if not package.get("self-update"):
+            continue
+        if not exists(f"repos/{full}/environments/release"):
+            print(f"{repo}: no release environment; create it as README.md says")
+            failed.append(repo)
+            continue
+        policies = gh_json("api", f"repos/{full}/environments/release/deployment-branch-policies")
+        allowed = [f"{b['type']}:{b['name']}" for b in policies["branch_policies"]]
+        if allowed != ["branch:main"]:
+            print(f"{repo}: the release environment must allow main alone, not {allowed or 'any branch'}")
+            failed.append(repo)
+            continue
+
+        committed = exists(f"repos/{full}/contents/update.pub")
+        stored = exists(f"repos/{full}/environments/release/secrets/ONELF_SIGNING_KEY")
+        if committed and stored:
+            print(f"{repo}: has its key")
+            continue
+        if committed:
+            print(f"{repo}: update.pub is on main but the release environment has no "
+                  "ONELF_SIGNING_KEY; restore it or rotate the key by hand")
+            failed.append(repo)
+            continue
+        pending = gh_json("pr", "list", "--repo", full, "--head", "chore/update-key",
+                          "--state", "open", "--json", "number")
+        if stored and pending:
+            print(f"{repo}: key proposed in #{pending[0]['number']}")
+            continue
+
+        # No released bundle embeds a key that is not on main, so a new
+        # pair may replace a secret left without its pull request.
+        with tempfile.TemporaryDirectory() as tmp:
+            secret, public = Path(tmp) / "key", Path(tmp) / "pub"
+            run(os.environ["ONELF"], "key", "new", "--secret", str(secret),
+                "--public", str(public))
+            subprocess.run(["gh", "secret", "set", "ONELF_SIGNING_KEY", "--env", "release",
+                            "--repo", full],
+                           input=base64.b64encode(secret.read_bytes()).decode(),
+                           text=True, check=True)
+            checkout = Path(tmp) / repo
+            clone(repo, checkout)
+            shutil.copyfile(public, checkout / "update.pub")
+            propose(repo, checkout, "chore/update-key",
+                    "feat: sign self-updates with this package's key",
+                    "Commits the public half of this package's onelf update key. Its "
+                    "secret half is already in the `release` environment as "
+                    "`ONELF_SIGNING_KEY`. From the next release on, every bundle is "
+                    "signed and accepts only signed updates; until then they update "
+                    "unsigned.\n\nMerged by the control repository once every check passes.")
+    if failed:
+        raise SystemExit(f"failed: {', '.join(failed)}")
+
+
 def status():
     print("| Package | Version | Upstream | Latest release | Last build |")
     print("|---------|---------|----------|----------------|------------|")
@@ -169,7 +243,7 @@ def status():
 
 
 def main():
-    commands = {"upstream": upstream, "merge": merge, "status": status}
+    commands = {"upstream": upstream, "merge": merge, "keys": keys, "status": status}
     if len(sys.argv) == 3 and sys.argv[1] == "sync":
         sync(sys.argv[2])
     elif len(sys.argv) == 2 and sys.argv[1] in commands:

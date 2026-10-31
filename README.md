@@ -38,13 +38,25 @@ a `chore/sync` pull request in every package repository, with `@__SHARED_REF__` 
 the commit synced from, and the control workflow merges each once it
 passes.
 
+## Signed self-updates
+
+A package whose bundles update themselves sets `self-update = true` in
+`package.toml`. The control workflow then generates its keypair, stores
+the secret half as `ONELF_SIGNING_KEY` in the repository's `release`
+environment, and opens a `chore/update-key` pull request committing the
+public half as `update.pub`. Once that merges, `build.sh` embeds the key
+and the release signs every `.onelf`, publishing each signature beside
+it. Until then the bundles update unsigned. A key on `main` is never
+replaced, since every bundle released since embeds it.
+
 ## A package repository
 
 | File | Holds |
 |------|-------|
-| `package.toml` | `name`, `release`, `arches`, and `[sources.<name>]` with `version`, `url`, `sha256` and `upstream` |
-| `build.sh` | runs as root in a Void Linux (glibc) container and writes `dist/` |
+| `package.toml` | `name`, `release`, `arches`, and `[sources.<name>]` with `version`, `url`, `sha256` and `upstream`; `self-update = true` for a package whose bundles update themselves |
+| `build.sh` | runs as root in a Void Linux (glibc) container, with the onelf release `pkg-release.yml` pins on `PATH`, and writes `dist/` |
 | `test.sh` | optional; runs after `build.sh` in the same container |
+| `update.pub` | the public half of the update key, proposed by the control workflow |
 | `.github/workflows/release.yml` | synced from `app/`; never edited in place |
 
 The source named like the package gives the version. `build/cache` is
@@ -62,6 +74,17 @@ gh api -X PATCH repos/onelf-pkgs/<name> \
   -F delete_branch_on_merge=true
 ```
 
+create its `release` environment, which the publish job runs in and
+main alone may use:
+
+```sh
+gh api -X PUT repos/onelf-pkgs/<name>/environments/release --input - <<'EOF'
+{"deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}
+EOF
+gh api -X POST repos/onelf-pkgs/<name>/environments/release/deployment-branch-policies \
+  -f name=main -f type=branch
+```
+
 then add its name to `packages.toml` and push: the sync opens its first
 pull request.
 
@@ -76,6 +99,7 @@ owned by the organization. Create it once:
    - Contents: read and write
    - Pull requests: read and write
    - Workflows: read and write
+   - Environments: read and write
    - Checks: read
    - Commit statuses: read
    - Actions: read

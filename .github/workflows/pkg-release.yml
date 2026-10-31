@@ -7,18 +7,37 @@ name: pkg-release
 # A package repository holds:
 #
 #   package.toml  `name`, `release`, `arches` and [sources.<name>], whose
-#                 version is the package's; see scripts/upstream.py
-#   build.sh      run as root in a Void Linux (glibc) container; writes dist/,
-#                 where a <file>.blake3 holds the hash of <file> that a
-#                 package pins, listed in the release notes, not uploaded
+#                 version is the package's; see scripts/upstream.py.
+#                 `self-update = true` for a package whose bundles update
+#                 themselves, which the control workflow gives a key
+#   build.sh      run as root in a Void Linux (glibc) container, with the
+#                 onelf release pinned below on PATH; writes dist/, where a
+#                 <file>.blake3 holds the hash of <file> that a package
+#                 pins, listed in the release notes, not uploaded
 #   test.sh       optional; run after build.sh in the same container
+#   update.pub    the public half of the key a self-updating package's
+#                 bundles accept updates under; the release signs every
+#                 .onelf with the secret half, ONELF_SIGNING_KEY in the
+#                 repository's `release` environment
 #
 # The release is tagged v<version>-<release>. A pull request, or a push
 # whose tag already exists, builds and tests without releasing.
 on:
   workflow_call:
+    secrets:
+      # A reusable workflow sees an environment secret only when the
+      # caller passes it, even though the caller never holds the value.
+      ONELF_SIGNING_KEY:
+        required: false
 
 permissions: {}
+
+# The onelf release every build packs with, pinned by the SHA-256 of each
+# architecture's binary. Bump the three together.
+env:
+  ONELF_VERSION: 0.5.1
+  ONELF_SHA256_X86_64: 2dc08df32544304ce6e435b25a200e040c54b307447bcf32b060c46dcdbdd817
+  ONELF_SHA256_AARCH64: 95bb4148b3c1eedbd931e9db25635d0db7d17e67b1ad55935fe51e8256c1d99c
 
 jobs:
   prepare:
@@ -73,7 +92,18 @@ jobs:
       - name: Install what the actions need
         run: |
           xbps-install -Syu xbps
-          xbps-install -Syu bash git tar xz zstd libstdc++ libgcc
+          xbps-install -Syu bash curl git tar xz zstd libstdc++ libgcc
+      - name: Install onelf
+        run: |
+          case $(uname -m) in
+          x86_64) sha256=$ONELF_SHA256_X86_64 ;;
+          aarch64) sha256=$ONELF_SHA256_AARCH64 ;;
+          esac
+          curl -fsSL --retry 3 -o /usr/local/bin/onelf \
+            "https://github.com/QaidVoid/onelf/releases/download/$ONELF_VERSION/onelf-$(uname -m)-linux"
+          echo "$sha256  /usr/local/bin/onelf" | sha256sum -c -
+          chmod +x /usr/local/bin/onelf
+          onelf --version
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -98,6 +128,9 @@ jobs:
     needs: [prepare, build]
     if: needs.prepare.outputs.publish == 'true'
     runs-on: ubuntu-latest
+    # The signing secret lives in the `release` environment, which main
+    # alone may use.
+    environment: release
     permissions:
       contents: write
       id-token: write
@@ -105,6 +138,9 @@ jobs:
     env:
       TAG: ${{ needs.prepare.outputs.tag }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: dist-*
@@ -115,6 +151,29 @@ jobs:
           mkdir hashes
           for hash in dist/*.blake3; do
             if [ -f "$hash" ]; then mv "$hash" hashes/; fi
+          done
+      # The runtime fetches <asset>.sig beside the asset it updates from.
+      # A signature covers the file's bytes, so one host signs every
+      # architecture.
+      - name: Sign self-updates
+        env:
+          ONELF_SIGNING_KEY: ${{ secrets.ONELF_SIGNING_KEY }}
+        run: |
+          [ -f update.pub ] || exit 0
+          if [ -z "$ONELF_SIGNING_KEY" ]; then
+            echo "update.pub is set, but the release environment has no ONELF_SIGNING_KEY" >&2
+            exit 1
+          fi
+          onelf=$RUNNER_TEMP/onelf
+          curl -fsSL --retry 3 -o "$onelf" \
+            "https://github.com/QaidVoid/onelf/releases/download/$ONELF_VERSION/onelf-x86_64-linux"
+          echo "$ONELF_SHA256_X86_64  $onelf" | sha256sum -c -
+          chmod +x "$onelf"
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$ONELF_SIGNING_KEY" | base64 -d > "$key"
+          for bundle in dist/*.onelf; do
+            "$onelf" sign "$bundle" --key "$key"
           done
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:

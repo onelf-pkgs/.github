@@ -1,8 +1,8 @@
 name: control
 
 # Once a day, and on demand: merge the bot's pull requests whose checks
-# passed, propose the upstream releases the packages fell behind, and
-# refresh the status issue.
+# passed, propose the upstream releases the packages fell behind, refresh
+# the status issue, and give self-updating packages their update keys.
 on:
   schedule:
     - cron: "0 5 * * *"
@@ -70,3 +70,17 @@ jobs:
             gh issue create --repo "$GITHUB_REPOSITORY" --title "Package status" \
               --body-file status.md
           fi
+      # Last, so a package that cannot get its key leaves the report alone.
+      - name: Provision update keys
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          # The onelf release pkg-release.yml pins; bump them together.
+          ONELF_VERSION: 0.5.1
+          ONELF_SHA256: 2dc08df32544304ce6e435b25a200e040c54b307447bcf32b060c46dcdbdd817
+        run: |
+          export ONELF=$RUNNER_TEMP/onelf
+          curl -fsSL --retry 3 -o "$ONELF" \
+            "https://github.com/QaidVoid/onelf/releases/download/$ONELF_VERSION/onelf-x86_64-linux"
+          echo "$ONELF_SHA256  $ONELF" | sha256sum -c -
+          chmod +x "$ONELF"
+          python3 scripts/control.py keys
