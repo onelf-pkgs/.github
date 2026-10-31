@@ -22,6 +22,11 @@ name: pkg-release
 #
 # The release is tagged v<version>-<release>. A pull request, or a push
 # whose tag already exists, builds and tests without releasing.
+#
+# The organization makes published releases immutable: nothing can be
+# added to one, and its tag can never be used again. The release is
+# therefore created as a draft and published only once every asset is
+# attached.
 on:
   workflow_call:
     secrets:
@@ -193,5 +198,14 @@ jobs:
               done
             fi
           } > notes.md
-          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" \
+          # A draft left by a run that failed before publishing holds no
+          # tag yet, so it is replaced rather than published half full.
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
+            --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .id" |
+            while read -r id; do
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
+            done
+          gh release create "$TAG" --draft --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" --title "$TAG" --notes-file notes.md
+          gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY"
+          gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"

@@ -26,7 +26,9 @@ repository is the one place they are maintained from.
    person unless a check fails.
 4. **The merge releases.** On `main`, the same workflow builds again and,
    since the tag `v<version>-<release>` does not exist yet, publishes a
-   release with build provenance attestations.
+   release with build provenance attestations. Releases are immutable:
+   once published, no asset changes and the tag is never reused, so a
+   fix ships as a new `release`.
 
 The `Package status` issue in this repository lists every package: its
 version, what upstream has, its latest release and its last build. The
@@ -113,3 +115,10 @@ owned by the organization. Create it once:
 
 Nothing else holds a credential. Each package repository releases with
 its own `GITHUB_TOKEN`.
+
+The organization enforces immutable releases on every repository,
+which the publish job relies on:
+
+```sh
+gh api -X PUT orgs/onelf-pkgs/settings/immutable-releases -f enforced_repositories=all
+```
