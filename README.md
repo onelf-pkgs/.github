@@ -85,8 +85,11 @@ gh api -X POST repos/onelf-pkgs/<name>/environments/release/deployment-branch-po
   -f name=main -f type=branch
 ```
 
-then add its name to `packages.toml` and push: the sync opens its first
-pull request.
+push its first commit to `main`, with `app/.github/workflows/release.yml`
+copied in and `@__SHARED_REF__` replaced by this repository's commit,
+and only then add its name to `packages.toml` and push. The sync cannot
+open a pull request against a repository with no `main`, and the branch
+it pushes there would become the default.
 
 ## Setup
 
