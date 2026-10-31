@@ -28,7 +28,12 @@ repository is the one place they are maintained from.
    since the tag `v<version>-<release>` does not exist yet, publishes a
    release with build provenance attestations. Releases are immutable:
    once published, no asset changes and the tag is never reused, so a
-   fix ships as a new `release`.
+   fix ships as a new `release`. The attestations are signed by the
+   shared workflow in this repository, so verifying an asset names it:
+
+   ```sh
+   gh attestation verify <file> --repo onelf-pkgs/<name> --signer-repo onelf-pkgs/.github
+   ```
 
 The `Package status` issue in this repository lists every package: its
 version, what upstream has, its latest release and its last build. The
