@@ -6,6 +6,7 @@ built from source, versioned, and released with build provenance.
 | Package | Provides |
 |---------|----------|
 | [mesa](https://github.com/onelf-pkgs/mesa) | GL and Vulkan drivers without a shared libLLVM, for bundles to carry |
+| [opus](https://github.com/onelf-pkgs/opus) | the Opus codec without its neural network weights, for bundles to carry |
 
 Every package is maintained from the
 [control repository](https://github.com/onelf-pkgs/.github): it follows
