@@ -40,9 +40,9 @@ permissions: {}
 # The onelf release every build packs with, pinned by the SHA-256 of each
 # architecture's binary. Bump the three together.
 env:
-  ONELF_VERSION: 0.5.1
-  ONELF_SHA256_X86_64: 2dc08df32544304ce6e435b25a200e040c54b307447bcf32b060c46dcdbdd817
-  ONELF_SHA256_AARCH64: 95bb4148b3c1eedbd931e9db25635d0db7d17e67b1ad55935fe51e8256c1d99c
+  ONELF_VERSION: 0.6.1
+  ONELF_SHA256_X86_64: e311c666a6f9d502850c56d2c440c8193ce22972fa09243901faaea8c1f6fc31
+  ONELF_SHA256_AARCH64: 5577f7a5aa3c89d376b540a61b123364b1038738aa78de4d990932ec11e78470
 
 jobs:
   prepare:

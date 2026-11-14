@@ -75,8 +75,8 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           # The onelf release pkg-release.yml pins; bump them together.
-          ONELF_VERSION: 0.5.1
-          ONELF_SHA256: 2dc08df32544304ce6e435b25a200e040c54b307447bcf32b060c46dcdbdd817
+          ONELF_VERSION: 0.6.1
+          ONELF_SHA256: e311c666a6f9d502850c56d2c440c8193ce22972fa09243901faaea8c1f6fc31
         run: |
           export ONELF=$RUNNER_TEMP/onelf
           curl -fsSL --retry 3 -o "$ONELF" \
