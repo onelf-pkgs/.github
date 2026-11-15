@@ -7,7 +7,7 @@ name: sync
 on:
   push:
     branches: [main]
-    paths: [app/**, packages.toml, .github/workflows/pkg-release.yml]
+    paths: [app/**, .github/workflows/pkg-release.yml]
   workflow_dispatch:
 
 concurrency:
